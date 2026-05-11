@@ -3,7 +3,7 @@
 | Folder   | What it is |
 |----------|------------|
 | `PC/`    | Expo app (React Native) |
-| `server/` | Hono API (Node 20), deploys to Vercel |
+| `server/` | Express API (Node 20), deploys to Vercel |
 
 ## Install
 
@@ -22,19 +22,19 @@ npm run dev:server  # Local API (tsx)
 
 ## Vercel (API)
 
-**Recommended:** set **Root Directory** to **`server`** (not the repo root). Then Vercel reads **`server/vercel.json`** only, discovers **`src/index.ts`** → `export default app`, and the **Hono** preset works.
+**Recommended:** set **Root Directory** to **`server`** (not the repo root). Then Vercel reads **`server/vercel.json`** and builds the API; the serverless entry is **`server/src/index.ts`** (`export default` = Express via **`serverless-http`**).
 
-If you leave Root Directory as **`.`** (repo root), the root **`vercel.json`** runs `npm install` / `npm run build` inside **`server/`** only — but you must still pick **Hono** or **Other** so the entry file is detected under **`server/src/index.ts`**.
+If you leave Root Directory as **`.`** (repo root), the root **`vercel.json`** runs `npm install` / `npm run build` inside **`server/`** only — set the framework to **Other** so **`server/src/index.ts`** is used as the function entry (do **not** use the **Hono** preset).
 
 1. Connect this repository to Vercel.
 2. **Root Directory:** **`server`** (recommended).
-3. **Framework preset:** **Hono** or **Other**.
-4. **Output directory:** leave this **empty / default** in the Vercel dashboard and **do not** set **`outputDirectory`** to **`public`** in **`vercel.json`**. Treating **`public`** as the deployment output directory makes Vercel ship **static files only**, so the Hono app is never invoked and paths like **`/health`** return **`404 NOT_FOUND`**. Optional static files live in **`server/public/`**; **`npm run build`** runs **`postbuild`** so that folder always exists after compile.
+3. **Framework preset:** **Other** (this API is **Express**, not Hono).
+4. **Output directory:** leave this **empty / default** in the Vercel dashboard and **do not** set **`outputDirectory`** to **`public`** in **`vercel.json`**. Treating **`public`** as the deployment output directory makes Vercel ship **static files only**, so the Express app is never invoked and paths like **`/health`** return **`404 NOT_FOUND`**. Optional static files live in **`server/public/`**; **`npm run build`** runs **`postbuild`** so that folder always exists after compile.
 5. **Environment variables:** `DATABASE_URL`, `JWT_SECRET`, … (`server/.env.example`).
 
 **Do not** add a `functions` pattern in `vercel.json` unless it matches files **relative to the Root Directory** — otherwise you get `doesn't match any` build errors.
 
-Production entry: **`server/src/index.ts`** (`export default app`).
+Production entry: **`server/src/index.ts`** (`export default` serverless handler).
 
 ## GitHub
 

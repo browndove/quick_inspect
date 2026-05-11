@@ -1,6 +1,6 @@
 # Production checklist — Quik Inspect
 
-## API (Hono in `server/`)
+## API (Express in `server/`)
 
 1. **Neon** — Create a database; copy the **pooler** connection string into Vercel env as `DATABASE_URL`.
 2. **Secrets** — Set `JWT_SECRET` to a long random string (`openssl rand -base64 32`).

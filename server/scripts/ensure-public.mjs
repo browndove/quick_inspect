@@ -1,7 +1,7 @@
 /**
  * Ensures `public/` exists after `tsc` so Vercel builds that expect a `public`
  * folder still find one. Do not set `vercel.json#outputDirectory` to `public`:
- * that turns the project into a static-only export and Hono routes return 404.
+ * that turns the project into a static-only export and API routes return 404.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,7 +18,7 @@ const robotsPath = path.join(pub, 'robots.txt');
 if (!fs.existsSync(robotsPath)) {
   fs.writeFileSync(
     robotsPath,
-    '# See README — static extras only; API is Hono (src/index.ts).\nUser-agent: *\nDisallow: /\n',
+    '# See README — static extras only; API is Express (src/index.ts).\nUser-agent: *\nDisallow: /\n',
     'utf8',
   );
 }

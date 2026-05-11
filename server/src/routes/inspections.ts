@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Router } from 'express';
 import { z } from 'zod';
 import { getSql } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -71,11 +71,8 @@ const signoffBody = z.object({
   data: z.record(z.string(), z.unknown()),
 });
 
-export const inspections = new Hono<{
-  Variables: { inspectorId: string; inspectorEmail: string };
-}>();
-
-inspections.use('*', requireAuth);
+export const inspectionsRouter = Router();
+inspectionsRouter.use(requireAuth);
 
 async function assertFacilityOwned(
   sql: ReturnType<typeof getSql>,
@@ -104,14 +101,13 @@ async function getInspection(
   return rows[0] ?? null;
 }
 
-inspections.get('/', async (c) => {
+inspectionsRouter.get('/', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const status = c.req.query('status')?.trim();
-  const facilityId = c.req.query('facilityId')?.trim();
+  const inspectorId = res.locals.inspectorId;
+  const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+  const facilityId = typeof req.query.facilityId === 'string' ? req.query.facilityId.trim() : '';
   const allowed = ['draft', 'submitted', 'signed'] as const;
-  const statusFilter =
-    status && (allowed as readonly string[]).includes(status) ? status : null;
+  const statusFilter = status && (allowed as readonly string[]).includes(status) ? status : null;
 
   if (statusFilter && facilityId) {
     const rows = (await sql`
@@ -123,7 +119,8 @@ inspections.get('/', async (c) => {
       order by created_at desc
       limit 200
     `) as InspectionRow[];
-    return c.json({ inspections: rows.map(mapInspection) });
+    res.json({ inspections: rows.map(mapInspection) });
+    return;
   }
   if (statusFilter) {
     const rows = (await sql`
@@ -133,7 +130,8 @@ inspections.get('/', async (c) => {
       order by created_at desc
       limit 200
     `) as InspectionRow[];
-    return c.json({ inspections: rows.map(mapInspection) });
+    res.json({ inspections: rows.map(mapInspection) });
+    return;
   }
   if (facilityId) {
     const rows = (await sql`
@@ -143,7 +141,8 @@ inspections.get('/', async (c) => {
       order by created_at desc
       limit 200
     `) as InspectionRow[];
-    return c.json({ inspections: rows.map(mapInspection) });
+    res.json({ inspections: rows.map(mapInspection) });
+    return;
   }
   const rows = (await sql`
     select id, inspector_id, facility_id, type, status, data, created_at, updated_at, submitted_at
@@ -152,20 +151,24 @@ inspections.get('/', async (c) => {
     order by created_at desc
     limit 200
   `) as InspectionRow[];
-  return c.json({ inspections: rows.map(mapInspection) });
+  res.json({ inspections: rows.map(mapInspection) });
 });
 
-inspections.post('/', async (c) => {
+inspectionsRouter.post('/', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const parsed = createBody.safeParse(await c.req.json());
+  const inspectorId = res.locals.inspectorId;
+  const parsed = createBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
   const { facilityId, type, data } = parsed.data;
   if (facilityId) {
     const ok = await assertFacilityOwned(sql, inspectorId, facilityId);
-    if (!ok) return c.json({ error: 'Facility not found' }, 404);
+    if (!ok) {
+      res.status(404).json({ error: 'Facility not found' });
+      return;
+    }
   }
   const rows = (await sql`
     insert into inspections (inspector_id, facility_id, type, data)
@@ -178,34 +181,41 @@ inspections.post('/', async (c) => {
     returning id, inspector_id, facility_id, type, status, data, created_at, updated_at, submitted_at
   `) as InspectionRow[];
   const row = rows[0];
-  if (!row) return c.json({ error: 'Create failed' }, 500);
-  return c.json(mapInspection(row), 201);
+  if (!row) {
+    res.status(500).json({ error: 'Create failed' });
+    return;
+  }
+  res.status(201).json(mapInspection(row));
 });
 
-inspections.get('/:id/export/pdf', async (c) => {
+inspectionsRouter.get('/:id/export/pdf', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const row = await getInspection(sql, inspectorId, id);
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json(
-    {
-      error: 'PDF export not implemented yet',
-      inspectionId: id,
-      hint: 'Wire a server-side renderer (e.g. pdfkit / puppeteer) and return application/pdf',
-    },
-    501,
-  );
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const row = await getInspection(sql, inspectorId, id!);
+  if (!row) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+  res.status(501).json({
+    error: 'PDF export not implemented yet',
+    inspectionId: id,
+    hint: 'Wire a server-side renderer (e.g. pdfkit / puppeteer) and return application/pdf',
+  });
 });
 
-inspections.patch('/:id/submit', async (c) => {
+inspectionsRouter.patch('/:id/submit', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const row = await getInspection(sql, inspectorId, id);
-  if (!row) return c.json({ error: 'Not found' }, 404);
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const row = await getInspection(sql, inspectorId, id!);
+  if (!row) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   if (row.status !== 'draft') {
-    return c.json({ error: 'Only draft inspections can be submitted' }, 400);
+    res.status(400).json({ error: 'Only draft inspections can be submitted' });
+    return;
   }
   const rows = (await sql`
     update inspections
@@ -214,25 +224,29 @@ inspections.patch('/:id/submit', async (c) => {
     returning id, inspector_id, facility_id, type, status, data, created_at, updated_at, submitted_at
   `) as InspectionRow[];
   const next = rows[0];
-  if (!next) return c.json({ error: 'Submit failed' }, 409);
-  return c.json(mapInspection(next));
+  if (!next) {
+    res.status(409).json({ error: 'Submit failed' });
+    return;
+  }
+  res.json(mapInspection(next));
 });
 
-inspections.patch('/:id/status', async (c) => {
+inspectionsRouter.patch('/:id/status', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const parsed = statusBody.safeParse(await c.req.json());
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const parsed = statusBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
   const { status } = parsed.data;
-  const row = await getInspection(sql, inspectorId, id);
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  const submittedAt =
-    status === 'draft'
-      ? null
-      : row.submitted_at ?? new Date().toISOString();
+  const row = await getInspection(sql, inspectorId, id!);
+  if (!row) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+  const submittedAt = status === 'draft' ? null : row.submitted_at ?? new Date().toISOString();
   const rows = (await sql`
     update inspections
     set
@@ -243,78 +257,102 @@ inspections.patch('/:id/status', async (c) => {
     returning id, inspector_id, facility_id, type, status, data, created_at, updated_at, submitted_at
   `) as InspectionRow[];
   const next = rows[0];
-  if (!next) return c.json({ error: 'Update failed' }, 500);
-  return c.json(mapInspection(next));
+  if (!next) {
+    res.status(500).json({ error: 'Update failed' });
+    return;
+  }
+  res.json(mapInspection(next));
 });
 
-inspections.delete('/:id', async (c) => {
+inspectionsRouter.delete('/:id', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const row = await getInspection(sql, inspectorId, id);
-  if (!row) return c.json({ error: 'Not found' }, 404);
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const row = await getInspection(sql, inspectorId, id!);
+  if (!row) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   if (row.status !== 'draft') {
-    return c.json({ error: 'Only draft inspections can be deleted' }, 400);
+    res.status(400).json({ error: 'Only draft inspections can be deleted' });
+    return;
   }
   await sql`
     delete from inspections
     where id = ${id}::uuid and inspector_id = ${inspectorId}::uuid and status = 'draft'
   `;
-  return c.body(null, 204);
+  res.status(204).end();
 });
 
-inspections.post('/:id/staff', async (c) => {
+inspectionsRouter.post('/:id/staff', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const parsed = staffCreateBody.safeParse(await c.req.json());
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const parsed = staffCreateBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
-  const row = await getInspection(sql, inspectorId, id);
-  if (!row) return c.json({ error: 'Not found' }, 404);
+  const row = await getInspection(sql, inspectorId, id!);
+  if (!row) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   const rows = (await sql`
     insert into inspection_staff (inspection_id, data)
     values (${id}::uuid, ${JSON.stringify(parsed.data.data)}::jsonb)
     returning id
   `) as { id: string }[];
   const sid = rows[0]?.id;
-  if (!sid) return c.json({ error: 'Create failed' }, 500);
-  return c.json({ id: sid }, 201);
+  if (!sid) {
+    res.status(500).json({ error: 'Create failed' });
+    return;
+  }
+  res.status(201).json({ id: sid });
 });
 
-inspections.get('/:id/staff', async (c) => {
+inspectionsRouter.get('/:id/staff', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const row = await getInspection(sql, inspectorId, id);
-  if (!row) return c.json({ error: 'Not found' }, 404);
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const row = await getInspection(sql, inspectorId, id!);
+  if (!row) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   const staff = (await sql`
     select id, data, created_at, updated_at
     from inspection_staff
     where inspection_id = ${id}::uuid
     order by created_at asc
   `) as { id: string; data: unknown; created_at: string; updated_at: string }[];
-  return c.json({ staff });
+  res.json({ staff });
 });
 
-inspections.put('/:id/staff/:sid', async (c) => {
+inspectionsRouter.put('/:id/staff/:sid', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const sid = c.req.param('sid');
-  const parsed = staffUpdateBody.safeParse(await c.req.json());
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const sid = req.params.sid;
+  const parsed = staffUpdateBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
-  const insp = await getInspection(sql, inspectorId, id);
-  if (!insp) return c.json({ error: 'Not found' }, 404);
+  const insp = await getInspection(sql, inspectorId, id!);
+  if (!insp) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   const cur = (await sql`
     select data from inspection_staff
     where id = ${sid}::uuid and inspection_id = ${id}::uuid
     limit 1
   `) as { data: Record<string, unknown> }[];
-  if (!cur[0]) return c.json({ error: 'Staff row not found' }, 404);
+  if (!cur[0]) {
+    res.status(404).json({ error: 'Staff row not found' });
+    return;
+  }
   const merged = { ...cur[0].data, ...parsed.data.data };
   const rows = (await sql`
     update inspection_staff
@@ -322,34 +360,44 @@ inspections.put('/:id/staff/:sid', async (c) => {
     where id = ${sid}::uuid and inspection_id = ${id}::uuid
     returning id
   `) as { id: string }[];
-  if (!rows[0]) return c.json({ error: 'Update failed' }, 404);
-  return c.json({ ok: true, id: rows[0].id });
+  if (!rows[0]) {
+    res.status(404).json({ error: 'Update failed' });
+    return;
+  }
+  res.json({ ok: true, id: rows[0].id });
 });
 
-inspections.delete('/:id/staff/:sid', async (c) => {
+inspectionsRouter.delete('/:id/staff/:sid', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const sid = c.req.param('sid');
-  const insp = await getInspection(sql, inspectorId, id);
-  if (!insp) return c.json({ error: 'Not found' }, 404);
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const sid = req.params.sid;
+  const insp = await getInspection(sql, inspectorId, id!);
+  if (!insp) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   await sql`
     delete from inspection_staff
     where id = ${sid}::uuid and inspection_id = ${id}::uuid
   `;
-  return c.body(null, 204);
+  res.status(204).end();
 });
 
-inspections.post('/:id/responses', async (c) => {
+inspectionsRouter.post('/:id/responses', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const parsed = responsesBulkBody.safeParse(await c.req.json());
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const parsed = responsesBulkBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
-  const insp = await getInspection(sql, inspectorId, id);
-  if (!insp) return c.json({ error: 'Not found' }, 404);
+  const insp = await getInspection(sql, inspectorId, id!);
+  if (!insp) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   for (const item of parsed.data.items) {
     const existing = (await sql`
       select value, flagged from inspection_responses
@@ -369,15 +417,18 @@ inspections.post('/:id/responses', async (c) => {
         updated_at = now()
     `;
   }
-  return c.json({ ok: true, count: parsed.data.items.length });
+  res.json({ ok: true, count: parsed.data.items.length });
 });
 
-inspections.get('/:id/responses', async (c) => {
+inspectionsRouter.get('/:id/responses', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const insp = await getInspection(sql, inspectorId, id);
-  if (!insp) return c.json({ error: 'Not found' }, 404);
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const insp = await getInspection(sql, inspectorId, id!);
+  if (!insp) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   const responses = (await sql`
     select id, question_key, value, flagged, updated_at
     from inspection_responses
@@ -390,7 +441,7 @@ inspections.get('/:id/responses', async (c) => {
     flagged: boolean;
     updated_at: string;
   }[];
-  return c.json({
+  res.json({
     responses: responses.map((r) => ({
       id: r.id,
       questionKey: r.question_key,
@@ -401,17 +452,21 @@ inspections.get('/:id/responses', async (c) => {
   });
 });
 
-inspections.patch('/:id/responses/:rid/flag', async (c) => {
+inspectionsRouter.patch('/:id/responses/:rid/flag', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const rid = c.req.param('rid');
-  const parsed = flagBody.safeParse(await c.req.json());
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const rid = req.params.rid;
+  const parsed = flagBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
-  const insp = await getInspection(sql, inspectorId, id);
-  if (!insp) return c.json({ error: 'Not found' }, 404);
+  const insp = await getInspection(sql, inspectorId, id!);
+  if (!insp) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   const rows = (await sql`
     update inspection_responses
     set flagged = ${parsed.data.flagged}, updated_at = now()
@@ -425,8 +480,11 @@ inspections.patch('/:id/responses/:rid/flag', async (c) => {
     updated_at: string;
   }[];
   const r = rows[0];
-  if (!r) return c.json({ error: 'Response not found' }, 404);
-  return c.json({
+  if (!r) {
+    res.status(404).json({ error: 'Response not found' });
+    return;
+  }
+  res.json({
     id: r.id,
     questionKey: r.question_key,
     value: r.value,
@@ -435,35 +493,43 @@ inspections.patch('/:id/responses/:rid/flag', async (c) => {
   });
 });
 
-inspections.post('/:id/signoff', async (c) => {
+inspectionsRouter.post('/:id/signoff', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const parsed = signoffBody.safeParse(await c.req.json());
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const parsed = signoffBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
-  const insp = await getInspection(sql, inspectorId, id);
-  if (!insp) return c.json({ error: 'Not found' }, 404);
+  const insp = await getInspection(sql, inspectorId, id!);
+  if (!insp) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   await sql`
     insert into inspection_signoff (inspection_id, data)
     values (${id}::uuid, ${JSON.stringify(parsed.data.data)}::jsonb)
     on conflict (inspection_id) do update
     set data = excluded.data, updated_at = now()
   `;
-  return c.json({ ok: true });
+  res.json({ ok: true });
 });
 
-inspections.put('/:id/signoff', async (c) => {
+inspectionsRouter.put('/:id/signoff', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const parsed = signoffBody.safeParse(await c.req.json());
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const parsed = signoffBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
-  const insp = await getInspection(sql, inspectorId, id);
-  if (!insp) return c.json({ error: 'Not found' }, 404);
+  const insp = await getInspection(sql, inspectorId, id!);
+  if (!insp) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   const cur = (await sql`
     select data from inspection_signoff where inspection_id = ${id}::uuid limit 1
   `) as { data: Record<string, unknown> }[];
@@ -474,46 +540,62 @@ inspections.put('/:id/signoff', async (c) => {
     on conflict (inspection_id) do update
     set data = excluded.data, updated_at = now()
   `;
-  return c.json({ ok: true });
+  res.json({ ok: true });
 });
 
-inspections.get('/:id/signoff', async (c) => {
+inspectionsRouter.get('/:id/signoff', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const insp = await getInspection(sql, inspectorId, id);
-  if (!insp) return c.json({ error: 'Not found' }, 404);
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const insp = await getInspection(sql, inspectorId, id!);
+  if (!insp) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   const rows = (await sql`
     select data, updated_at from inspection_signoff where inspection_id = ${id}::uuid limit 1
   `) as { data: unknown; updated_at: string }[];
   const row = rows[0];
-  if (!row) return c.json({ data: null, updatedAt: null });
-  return c.json({ data: row.data, updatedAt: row.updated_at });
+  if (!row) {
+    res.json({ data: null, updatedAt: null });
+    return;
+  }
+  res.json({ data: row.data, updatedAt: row.updated_at });
 });
 
-inspections.get('/:id', async (c) => {
+inspectionsRouter.get('/:id', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const row = await getInspection(sql, inspectorId, id);
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json(mapInspection(row));
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const row = await getInspection(sql, inspectorId, id!);
+  if (!row) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+  res.json(mapInspection(row));
 });
 
-inspections.put('/:id', async (c) => {
+inspectionsRouter.put('/:id', async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const id = c.req.param('id');
-  const parsed = updateBody.safeParse(await c.req.json());
+  const inspectorId = res.locals.inspectorId;
+  const id = req.params.id;
+  const parsed = updateBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
   const b = parsed.data;
-  const cur = await getInspection(sql, inspectorId, id);
-  if (!cur) return c.json({ error: 'Not found' }, 404);
+  const cur = await getInspection(sql, inspectorId, id!);
+  if (!cur) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   if (b.facilityId !== undefined && b.facilityId !== null) {
     const ok = await assertFacilityOwned(sql, inspectorId, b.facilityId);
-    if (!ok) return c.json({ error: 'Facility not found' }, 404);
+    if (!ok) {
+      res.status(404).json({ error: 'Facility not found' });
+      return;
+    }
   }
   const facilityId = b.facilityId !== undefined ? b.facilityId : cur.facility_id;
   const type = b.type ?? cur.type;
@@ -532,6 +614,9 @@ inspections.put('/:id', async (c) => {
     returning id, inspector_id, facility_id, type, status, data, created_at, updated_at, submitted_at
   `) as InspectionRow[];
   const next = rows[0];
-  if (!next) return c.json({ error: 'Update failed' }, 500);
-  return c.json(mapInspection(next));
+  if (!next) {
+    res.status(500).json({ error: 'Update failed' });
+    return;
+  }
+  res.json(mapInspection(next));
 });

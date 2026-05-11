@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Router } from 'express';
 import { z } from 'zod';
 import { getSql } from '../db.js';
 import { signAccessToken } from '../lib/jwt.js';
@@ -48,30 +48,26 @@ const signatureBody = z.object({
   signatureUrl: z.string().url(),
 });
 
-export const auth = new Hono<{
-  Variables: { inspectorId: string; inspectorEmail: string };
-}>();
+export const authRouter = Router();
 
-/** Browser address bar uses GET — login is POST only; respond fast (no DB). */
-auth.get('/login', (c) =>
-  c.json(
-    {
-      error: 'Method not allowed',
-      hint: 'Use POST with JSON body: { "email": "…", "password": "…" } (e.g. curl or the mobile app).',
-    },
-    405,
-  ),
-);
+authRouter.get('/login', (_req, res) => {
+  res.status(405).json({
+    error: 'Method not allowed',
+    hint: 'Use POST with JSON body: { "email": "…", "password": "…" } (e.g. curl or the mobile app).',
+  });
+});
 
-auth.post('/signup', async (c) => {
+authRouter.post('/signup', async (req, res) => {
   if (!process.env.JWT_SECRET?.trim()) {
-    return c.json({ error: 'Server is misconfigured (missing JWT secret).' }, 503);
+    res.status(503).json({ error: 'Server is misconfigured (missing JWT secret).' });
+    return;
   }
 
   const sql = getSql();
-  const parsed = signupBody.safeParse(await c.req.json());
+  const parsed = signupBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
   const { email, password, firstName, lastName } = parsed.data;
   try {
@@ -83,88 +79,85 @@ auth.post('/signup', async (c) => {
     `;
     const id = firstRowId(rows);
     if (!id) {
-      console.error('signup insert returned no id', { rowCount: Array.isArray(rows) ? rows.length : 'n/a', sample: rows });
-      return c.json({ error: 'Account was not saved correctly. Redeploy the API or run database migrations.' }, 500);
+      console.error('signup insert returned no id', {
+        rowCount: Array.isArray(rows) ? rows.length : 'n/a',
+        sample: rows,
+      });
+      res.status(500).json({
+        error: 'Account was not saved correctly. Redeploy the API or run database migrations.',
+      });
+      return;
     }
     const token = signAccessToken({ sub: id, email: email.toLowerCase() });
-    return c.json(
-      {
-        token,
-        inspector: {
-          id,
-          email: email.toLowerCase(),
-          firstName,
-          lastName,
-        },
+    res.status(201).json({
+      token,
+      inspector: {
+        id,
+        email: email.toLowerCase(),
+        firstName,
+        lastName,
       },
-      201,
-    );
+    });
   } catch (e: unknown) {
     const code = postgresErrorCode(e);
     const chain = errorMessageChain(e);
 
     if (code === '23505' || looksLikeUniqueViolation(e)) {
-      return c.json({ error: 'Email already registered' }, 409);
+      res.status(409).json({ error: 'Email already registered' });
+      return;
     }
     if (code === '42P01' || looksLikeMissingRelation(e)) {
-      return c.json(
-        {
-          error:
-            'Database not initialized. From the API project run: npm run db:migrate (with DATABASE_URL set to your Neon DB).',
-        },
-        503,
-      );
+      res.status(503).json({
+        error:
+          'Database not initialized. From the API project run: npm run db:migrate (with DATABASE_URL set to your Neon DB).',
+      });
+      return;
     }
     if (code === '42703') {
-      return c.json(
-        {
-          error:
-            'Database schema is out of date. Run npm run db:migrate against the database used by Vercel.',
-        },
-        503,
-      );
+      res.status(503).json({
+        error:
+          'Database schema is out of date. Run npm run db:migrate against the database used by Vercel.',
+      });
+      return;
     }
     if (looksLikeDbTransportFailure(e)) {
-      return c.json(
-        {
-          error:
-            'API cannot reach the database. On Vercel, open the project → Settings → Environment Variables and fix DATABASE_URL (Neon connection string).',
-        },
-        503,
-      );
+      res.status(503).json({
+        error:
+          'API cannot reach the database. On Vercel, open the project → Settings → Environment Variables and fix DATABASE_URL (Neon connection string).',
+      });
+      return;
     }
     if (chain.includes('password authentication failed')) {
-      return c.json(
-        { error: 'Database URL password is wrong. Update DATABASE_URL in the server environment.' },
-        503,
-      );
+      res.status(503).json({
+        error: 'Database URL password is wrong. Update DATABASE_URL in the server environment.',
+      });
+      return;
     }
     if (chain.includes('JWT_SECRET') || /secret.*jwt|jwt.*secret|secretOrPrivateKey/i.test(chain)) {
-      return c.json(
-        { error: 'Server cannot sign login tokens. Set a strong JWT_SECRET on Vercel (e.g. openssl rand -base64 32).' },
-        503,
-      );
+      res.status(503).json({
+        error: 'Server cannot sign login tokens. Set a strong JWT_SECRET on Vercel (e.g. openssl rand -base64 32).',
+      });
+      return;
     }
     if (/bcrypt|hash.*password|password.*hash/i.test(chain)) {
-      return c.json({ error: 'Could not secure your password. Try again in a moment.' }, 500);
+      res.status(500).json({ error: 'Could not secure your password. Try again in a moment.' });
+      return;
     }
 
     console.error('signup error', chain, e);
     const suffix = code ? ` (database code ${code})` : '';
-    return c.json(
-      {
-        error: `Could not create account${suffix}. Check Vercel → this deployment → Logs, or confirm DATABASE_URL on Vercel matches the Neon DB you migrated.`,
-      },
-      500,
-    );
+    res.status(500).json({
+      error: `Could not create account${suffix}. Check Vercel → this deployment → Logs, or confirm DATABASE_URL on Vercel matches the Neon DB you migrated.`,
+    });
   }
 });
 
-auth.post('/login', async (c) => {
+authRouter.post('/login', async (req, res) => {
   const sql = getSql();
-  const parsed = loginBody.safeParse(await c.req.json());
+  const parsed = loginBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
   const { email, password } = parsed.data;
   const rows = (await sql`
@@ -180,13 +173,14 @@ auth.post('/login', async (c) => {
   }[];
   const row = rows[0];
   if (!row || !(await verifyPassword(password, row.password_hash))) {
-    return c.json({ error: 'Invalid email or password' }, 401);
+    res.status(401).json({ error: 'Invalid email or password' });
+    return;
   }
   const token = signAccessToken({
     sub: row.id,
     email: email.toLowerCase(),
   });
-  return c.json({
+  res.json({
     token,
     inspector: {
       id: row.id,
@@ -197,9 +191,9 @@ auth.post('/login', async (c) => {
   });
 });
 
-auth.get('/me', requireAuth, async (c) => {
+authRouter.get('/me', requireAuth, async (_req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
+  const inspectorId = res.locals.inspectorId;
   const rows = (await sql`
     select id, email, first_name, last_name, phone, signature_url, created_at
     from inspectors
@@ -215,8 +209,11 @@ auth.get('/me', requireAuth, async (c) => {
     created_at: string;
   }[];
   const row = rows[0];
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json({
+  if (!row) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+  res.json({
     id: row.id,
     email: row.email,
     firstName: row.first_name,
@@ -227,12 +224,13 @@ auth.get('/me', requireAuth, async (c) => {
   });
 });
 
-auth.put('/profile', requireAuth, async (c) => {
+authRouter.put('/profile', requireAuth, async (req, res, next) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const parsed = profileBody.safeParse(await c.req.json());
+  const inspectorId = res.locals.inspectorId;
+  const parsed = profileBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
   const b = parsed.data;
   const cur = (await sql`
@@ -247,7 +245,10 @@ auth.put('/profile', requireAuth, async (c) => {
     last_name: string;
     phone: string | null;
   }[];
-  if (!cur[0]) return c.json({ error: 'Not found' }, 404);
+  if (!cur[0]) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
   const firstName = b.firstName ?? cur[0].first_name;
   const lastName = b.lastName ?? cur[0].last_name;
   const phone = b.phone !== undefined ? b.phone : cur[0].phone;
@@ -271,8 +272,11 @@ auth.put('/profile', requireAuth, async (c) => {
       phone: string | null;
     }[];
     const row = rows[0];
-    if (!row) return c.json({ error: 'Not found' }, 404);
-    return c.json({
+    if (!row) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+    res.json({
       id: row.id,
       email: row.email,
       firstName: row.first_name,
@@ -282,18 +286,20 @@ auth.put('/profile', requireAuth, async (c) => {
   } catch (e: unknown) {
     const code = (e as { code?: string })?.code;
     if (code === '23505') {
-      return c.json({ error: 'Email already in use' }, 409);
+      res.status(409).json({ error: 'Email already in use' });
+      return;
     }
-    throw e;
+    next(e);
   }
 });
 
-auth.put('/signature', requireAuth, async (c) => {
+authRouter.put('/signature', requireAuth, async (req, res) => {
   const sql = getSql();
-  const inspectorId = c.get('inspectorId');
-  const parsed = signatureBody.safeParse(await c.req.json());
+  const inspectorId = res.locals.inspectorId;
+  const parsed = signatureBody.safeParse(req.body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: parsed.error.flatten() }, 400);
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
   }
   const { signatureUrl } = parsed.data;
   const rows = (await sql`
@@ -303,6 +309,9 @@ auth.put('/signature', requireAuth, async (c) => {
     returning id, signature_url
   `) as { id: string; signature_url: string }[];
   const row = rows[0];
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json({ id: row.id, signatureUrl: row.signature_url });
+  if (!row) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+  res.json({ id: row.id, signatureUrl: row.signature_url });
 });

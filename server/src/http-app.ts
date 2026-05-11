@@ -1,47 +1,50 @@
 /**
- * Hono application instance.
- *
- * File is intentionally **not** named `app.ts` — Vercel can mis-detect `src/app.*`
- * as a Next.js App Router entry and try to run it as a standalone serverless
- * function ("default export must be a function").
+ * Express application. File is **not** named `app.ts` — Vercel can mis-detect
+ * `src/app.*` as a Next.js App Router entry.
  */
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
+import cors from 'cors';
+import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
+import 'express-async-errors';
 import { getSql } from './db.js';
 import { errorMessageChain, looksLikeDbTransportFailure, postgresErrorCode } from './pg-error.js';
-import { auth } from './routes/auth.js';
-import { checklists } from './routes/checklists.js';
-import { facilities } from './routes/facilities.js';
-import { inspections } from './routes/inspections.js';
+import { authRouter } from './routes/auth.js';
+import { checklistsRouter } from './routes/checklists.js';
+import { facilitiesRouter } from './routes/facilities.js';
+import { inspectionsRouter } from './routes/inspections.js';
 
-/**
- * CORS: optional `CORS_ORIGIN` = comma-separated web origins (e.g. `https://app.example.com`).
- * If unset or `*`, all origins are allowed (typical while Expo native has no `Origin` header).
- * For a browser-only web client in production, set an explicit list and drop `*`.
- */
-function corsOrigin(): string | ((origin: string | undefined) => string | undefined | null) {
+function corsOriginDelegate(): (
+  origin: string | undefined,
+  cb: (err: Error | null, allow?: boolean) => void,
+) => void {
   const raw = process.env.CORS_ORIGIN?.trim();
-  if (!raw || raw === '*') return '*';
+  if (!raw || raw === '*') {
+    return (_origin, cb) => cb(null, true);
+  }
   const allowed = raw.split(',').map((s) => s.trim()).filter(Boolean);
-  if (allowed.length === 0) return '*';
-  return (origin) => {
-    if (!origin) return '*';
-    return allowed.includes(origin) ? origin : undefined;
+  if (allowed.length === 0) {
+    return (_origin, cb) => cb(null, true);
+  }
+  return (origin, cb) => {
+    if (!origin) {
+      cb(null, true);
+      return;
+    }
+    cb(null, allowed.includes(origin));
   };
 }
 
-export const app = new Hono();
-
+export const app = express();
+app.disable('x-powered-by');
+app.use(express.json({ limit: '2mb' }));
 app.use(
-  '*',
   cors({
-    origin: corsOrigin(),
-    allowHeaders: ['Content-Type', 'Authorization'],
-    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    origin: corsOriginDelegate(),
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   }),
 );
 
-app.get('/health', async (c) => {
+const healthHandler: RequestHandler = async (_req, res) => {
   const base = {
     ok: true,
     runtime: process.env.VERCEL ? 'vercel' : 'node',
@@ -50,7 +53,6 @@ app.get('/health', async (c) => {
     database: {
       reachable: false,
       inspectorsTable: false,
-      /** Set when reachable is false — safe to show in dashboard; no secrets. */
       hint: null as string | null,
     },
   };
@@ -58,7 +60,8 @@ app.get('/health', async (c) => {
   try {
     if (!process.env.DATABASE_URL?.trim()) {
       base.database.hint = 'DATABASE_URL is not set on this deployment.';
-      return c.json(base);
+      res.json(base);
+      return;
     }
     const sql = getSql();
     await sql`select 1 as ping`;
@@ -84,24 +87,29 @@ app.get('/health', async (c) => {
     console.error('health db check', chain);
   }
 
-  return c.json(base);
-});
+  res.json(base);
+};
 
-/** Quiet browser probes so deployment logs stay clean. */
-app.get('/favicon.ico', () => new Response(null, { status: 204 }));
-app.get('/favicon.png', () => new Response(null, { status: 204 }));
+app.get('/health', healthHandler);
+app.get('/favicon.ico', (_req, res) => res.status(204).end());
+app.get('/favicon.png', (_req, res) => res.status(204).end());
 
-app.route('/auth', auth);
-app.route('/facilities', facilities);
-app.route('/inspections', inspections);
-app.route('/checklists', checklists);
+app.use('/auth', authRouter);
+app.use('/facilities', facilitiesRouter);
+app.use('/inspections', inspectionsRouter);
+app.use('/checklists', checklistsRouter);
 
-app.onError((err, c) => {
+const notFound: RequestHandler = (_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+};
+app.use(notFound);
+
+const onError: ErrorRequestHandler = (err, _req, res, _next) => {
   console.error(err);
   if (process.env.NODE_ENV !== 'production') {
-    return c.json({ error: err.message }, 500);
+    res.status(500).json({ error: err.message });
+    return;
   }
-  return c.json({ error: 'Internal server error' }, 500);
-});
-
-app.notFound((c) => c.json({ error: 'Not found' }, 404));
+  res.status(500).json({ error: 'Internal server error' });
+};
+app.use(onError);

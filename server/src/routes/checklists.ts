@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Router } from 'express';
 import { otcChecklist, pharmacyChecklist } from '../data/checklists.js';
 
 const templates: Record<string, unknown> = {
@@ -6,13 +6,14 @@ const templates: Record<string, unknown> = {
   otc: otcChecklist,
 };
 
-export const checklists = new Hono();
+export const checklistsRouter = Router();
 
-checklists.get('/:type', (c) => {
-  const type = c.req.param('type').toLowerCase();
+checklistsRouter.get('/:type', (req, res) => {
+  const type = req.params.type?.toLowerCase() ?? '';
   const body = templates[type];
   if (!body) {
-    return c.json({ error: 'Unknown checklist type', allowed: ['pharmacy', 'otc'] }, 404);
+    res.status(404).json({ error: 'Unknown checklist type', allowed: ['pharmacy', 'otc'] });
+    return;
   }
-  return c.json(body);
+  res.json(body);
 });
