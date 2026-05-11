@@ -1,0 +1,14 @@
+{
+  "name": "quik-inspect",
+  "private": true,
+  "description": "Monorepo: Quik Inspect mobile app (PC/) + Hono API (server/).",
+  "scripts": {
+    "install:all": "npm install --prefix PC && npm install --prefix server",
+    "dev:server": "npm run dev --prefix server",
+    "dev:pc": "npm run start --prefix PC",
+    "build:server": "npm run build --prefix server",
+    "typecheck:server": "npm run typecheck --prefix server",
+    "lint:pc": "npm run lint --prefix PC",
+    "db:migrate": "npm run db:migrate --prefix server"
+  }
+}

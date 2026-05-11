@@ -1,0 +1,33 @@
+{
+  "name": "quik-inspect-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/src/index.js",
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:smoke": "node scripts/db-smoke.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "@neondatabase/serverless": "^0.10.4",
+    "bcryptjs": "^3.0.2",
+    "dotenv": "^16.6.1",
+    "hono": "^4.10.4",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.19.0",
+    "postgres": "^3.4.7",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

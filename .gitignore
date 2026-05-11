@@ -1,0 +1,12 @@
+.pydeps/
+
+.DS_Store
+*.log
+npm-debug.*
+
+# Root-level binaries (remove lines if you want them in git)
+/COUNCI.pdf
+/COUNCIL.pdf
+
+# Hoisted root install (if you ever use npm workspaces later)
+/node_modules/
