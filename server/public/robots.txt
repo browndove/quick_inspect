@@ -1,0 +1,4 @@
+# Placeholder static output for Vercel (required when Output Directory = public).
+# Do not add index.html here — it can shadow API paths like /health.
+User-agent: *
+Disallow: /
