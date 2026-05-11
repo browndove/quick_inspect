@@ -23,12 +23,12 @@ npm run dev:server  # Local API (tsx)
 ## Vercel (API)
 
 1. Connect this **single repository** to Vercel.
-2. **Settings → General → Root Directory:** set to **`server`** (not `./`).
-3. **Framework preset:** **Other** (not “Hono” template).
-4. **Output directory:** leave empty / N/A.
-5. Set `DATABASE_URL`, `JWT_SECRET`, etc. under **Environment Variables** for the `server` app.
+2. **Settings → General → Root Directory:** **`server`** (required for this monorepo).
+3. **Framework preset:** **Hono** (matches `src/index.ts` → `export default app`) or **Other**.
+4. **Output directory:** leave **empty** (do not set `public` or `dist`).
+5. **Environment variables:** `DATABASE_URL`, `JWT_SECRET`, etc. (see `server/.env.example`).
 
-`server/vercel.json` rewrites all traffic to `api/index.ts`.
+The API entry for production is **`server/src/index.ts`** (Vercel’s supported Hono shape — no `api/` folder or rewrites).
 
 ## GitHub
 

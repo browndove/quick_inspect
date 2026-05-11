@@ -12,5 +12,5 @@
     "declaration": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["src/**/*.ts", "api/**/*.ts", "scripts/**/*.mjs"]
+  "include": ["src/**/*.ts", "scripts/**/*.mjs"]
 }
