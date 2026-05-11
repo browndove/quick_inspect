@@ -22,13 +22,19 @@ npm run dev:server  # Local API (tsx)
 
 ## Vercel (API)
 
-1. Connect this **single repository** to Vercel.
-2. **Settings → General → Root Directory:** **`server`** (required for this monorepo).
-3. **Framework preset:** **Hono** (matches `src/index.ts` → `export default app`) or **Other**.
-4. **Output directory:** leave **empty** (do not set `public` or `dist`).
-5. **Environment variables:** `DATABASE_URL`, `JWT_SECRET`, etc. (see `server/.env.example`).
+**Recommended:** set **Root Directory** to **`server`** (not the repo root). Then Vercel reads **`server/vercel.json`** only, discovers **`src/index.ts`** → `export default app`, and the **Hono** preset works.
 
-The API entry for production is **`server/src/index.ts`** (Vercel’s supported Hono shape — no `api/` folder or rewrites).
+If you leave Root Directory as **`.`** (repo root), the root **`vercel.json`** runs `npm install` / `npm run build` inside **`server/`** only — but you must still pick **Hono** or **Other** so the entry file is detected under **`server/src/index.ts`**.
+
+1. Connect this repository to Vercel.
+2. **Root Directory:** **`server`** (recommended).
+3. **Framework preset:** **Hono** or **Other**.
+4. **Output directory:** **empty** (never `public` unless you add static files on purpose).
+5. **Environment variables:** `DATABASE_URL`, `JWT_SECRET`, … (`server/.env.example`).
+
+**Do not** add a `functions` pattern in `vercel.json` unless it matches files **relative to the Root Directory** — otherwise you get `doesn't match any` build errors.
+
+Production entry: **`server/src/index.ts`** (`export default app`).
 
 ## GitHub
 
