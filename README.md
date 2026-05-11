@@ -29,7 +29,7 @@ If you leave Root Directory as **`.`** (repo root), the root **`vercel.json`** r
 1. Connect this repository to Vercel.
 2. **Root Directory:** **`server`** (recommended).
 3. **Framework preset:** **Hono** or **Other**.
-4. **Output directory:** if your Vercel project **requires** `public`, the repo ships **`server/public/`** (placeholder) and **`vercel.json`** sets **`outputDirectory`** so the build passes. Prefer clearing the field in the dashboard if you can.
+4. **Output directory:** leave this **empty** in the Vercel dashboard. Setting it to **`public`** (or shipping a root **`index.html`** there) makes Vercel treat the project like a static site and can serve that HTML for paths such as **`/health`** instead of your Hono route. The API is **`server/src/index.ts`** only — no static output directory is required for `tsc` builds.
 5. **Environment variables:** `DATABASE_URL`, `JWT_SECRET`, … (`server/.env.example`).
 
 **Do not** add a `functions` pattern in `vercel.json` unless it matches files **relative to the Root Directory** — otherwise you get `doesn't match any` build errors.
