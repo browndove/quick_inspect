@@ -29,7 +29,7 @@ If you leave Root Directory as **`.`** (repo root), the root **`vercel.json`** r
 1. Connect this repository to Vercel.
 2. **Root Directory:** **`server`** (recommended).
 3. **Framework preset:** **Hono** or **Other**.
-4. **Output directory:** **empty** (never `public` unless you add static files on purpose).
+4. **Output directory:** if your Vercel project **requires** `public`, the repo ships **`server/public/`** (placeholder) and **`vercel.json`** sets **`outputDirectory`** so the build passes. Prefer clearing the field in the dashboard if you can.
 5. **Environment variables:** `DATABASE_URL`, `JWT_SECRET`, … (`server/.env.example`).
 
 **Do not** add a `functions` pattern in `vercel.json` unless it matches files **relative to the Root Directory** — otherwise you get `doesn't match any` build errors.
