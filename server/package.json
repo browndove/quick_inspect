@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "tsx watch src/dev-server.ts",
     "build": "tsc",
+    "postbuild": "node scripts/ensure-public.mjs",
     "start": "node dist/src/dev-server.js",
     "db:migrate": "node scripts/migrate.mjs",
     "db:smoke": "node scripts/db-smoke.mjs",
