@@ -1,11 +1,15 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
+/** Production API (Railway). Override with EXPO_PUBLIC_API_URL for local FastAPI. */
+const DEFAULT_API_ORIGIN = 'https://pc-server-production.up.railway.app';
+
 /**
  * Production-oriented defaults. Override bundle IDs with env at build time if needed:
  *   IOS_BUNDLE_ID=com.yourorg.quikinspect ANDROID_PACKAGE=com.yourorg.quikinspect
  */
 export default ({ config }: ConfigContext): ExpoConfig => {
-  const apiUrl = (process.env.EXPO_PUBLIC_API_URL ?? '').trim().replace(/\/$/, '');
+  const raw = (process.env.EXPO_PUBLIC_API_URL ?? '').trim();
+  const apiUrl = (raw || DEFAULT_API_ORIGIN).replace(/\/$/, '');
   const allowCleartext = apiUrl.startsWith('http://');
 
   return {
