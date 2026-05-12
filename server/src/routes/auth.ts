@@ -73,8 +73,8 @@ authRouter.post('/signup', async (req, res) => {
   try {
     const passwordHash = await hashPassword(password);
     const rows = await sql`
-      insert into inspectors (email, password_hash, first_name, last_name)
-      values (${email.toLowerCase()}, ${passwordHash}, ${firstName}, ${lastName})
+      insert into inspectors (email, password_hash, first_name, last_name, created_at, updated_at)
+      values (${email.toLowerCase()}, ${passwordHash}, ${firstName}, ${lastName}, now(), now())
       returning id
     `;
     const id = firstRowId(rows);
