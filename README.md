@@ -3,7 +3,8 @@
 | Folder   | What it is |
 |----------|------------|
 | `PC/`    | Expo app (React Native) |
-| `server/` | Express API (Node 20), deploys to Vercel |
+| `backend/` | **FastAPI** API (Python 3.11+), Neon — **recommended** backend |
+| `server/` | Legacy **Express** API (Node 20); optional if you standardize on `backend/` |
 
 ## Install
 
@@ -11,34 +12,40 @@
 npm run install:all
 ```
 
-Or install each package: `cd PC && npm i` and `cd server && npm i`.
+Or install each package: `cd PC && npm i`, `cd server && npm i`, and the Python API:
+
+```bash
+cd backend && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+```
 
 ## Dev
 
 ```bash
-npm run dev:pc      # Expo / Metro
-npm run dev:server  # Local API (tsx)
+npm run dev:pc       # Expo / Metro
+npm run dev:backend  # FastAPI (uvicorn), port 3000
+npm run dev:server   # Legacy Express (tsx), port 3000
 ```
 
 ## Vercel (API)
 
-**Recommended:** set **Root Directory** to **`server`** (not the repo root). Then Vercel reads **`server/vercel.json`** and builds the API; the serverless entry is **`server/src/index.ts`** (`export default` = Express via **`serverless-http`**).
+### FastAPI (`backend/`) — recommended
 
-If you leave Root Directory as **`.`** (repo root), the root **`vercel.json`** runs `npm install` / `npm run build` inside **`server/`** only — set the framework to **Other** so **`server/src/index.ts`** is used as the function entry (do **not** use the **Hono** preset).
+1. **Root Directory:** **`backend`**
+2. **Framework preset:** **FastAPI** (see [Vercel FastAPI](https://vercel.com/docs/frameworks/backend/fastapi); `pyproject.toml` sets **`[tool.vercel] entrypoint = "app.main:app"`**).
+3. **Output directory:** leave **empty** (do not use `public` as the only deployment output).
+4. **Environment variables:** `DATABASE_URL`, `JWT_SECRET`, optional `JWT_EXPIRES_IN`, `CORS_ORIGIN` — see **`backend/.env.example`**.
 
-1. Connect this repository to Vercel.
-2. **Root Directory:** **`server`** (recommended).
-3. **Framework preset:** **Other** (this API is **Express**, not Hono).
-4. **Output directory:** leave this **empty / default** in the Vercel dashboard and **do not** set **`outputDirectory`** to **`public`** in **`vercel.json`**. Treating **`public`** as the deployment output directory makes Vercel ship **static files only**, so the Express app is never invoked and paths like **`/health`** return **`404 NOT_FOUND`**. Optional static files live in **`server/public/`**; **`npm run build`** runs **`postbuild`** so that folder always exists after compile.
-5. **Environment variables:** `DATABASE_URL`, `JWT_SECRET`, … (`server/.env.example`).
+### Legacy Express (`server/`)
 
-**Do not** add a `functions` pattern in `vercel.json` unless it matches files **relative to the Root Directory** — otherwise you get `doesn't match any` build errors.
+1. **Root Directory:** **`server`**
+2. **Framework preset:** **Other**
+3. **Output directory:** empty; env vars as in **`server/.env.example`**.
 
-Production entry: **`server/src/index.ts`** (`export default` serverless handler).
+Production entry (Express): **`server/src/index.ts`**. Production entry (FastAPI): **`app.main:app`** inside **`backend/`**.
 
 ## GitHub
 
-This repo replaces separate `PC` + `PC-server` remotes. After pushing here, point Vercel and EAS at this repo (Vercel root = `server`).
+This repo replaces separate `PC` + `PC-server` remotes. After pushing here, point Vercel and EAS at this repo (Vercel root = **`backend`** for the Python API, or **`server`** if you still deploy Express).
 
 Former remotes (for history / cherry-pick if needed):
 

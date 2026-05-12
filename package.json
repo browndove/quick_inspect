@@ -1,14 +1,17 @@
 {
   "name": "quik-inspect",
   "private": true,
-  "description": "Monorepo: Quik Inspect mobile app (PC/) + Express API (server/).",
+  "description": "Monorepo: Quik Inspect mobile app (PC/) + FastAPI (backend/) + optional Express (server/).",
   "scripts": {
     "install:all": "npm install --prefix PC && npm install --prefix server",
+    "install:backend": "cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
     "dev:server": "npm run dev --prefix server",
+    "dev:backend": "cd backend && .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 3000",
     "dev:pc": "npm run start --prefix PC",
     "build:server": "npm run build --prefix server",
     "typecheck:server": "npm run typecheck --prefix server",
     "lint:pc": "npm run lint --prefix PC",
-    "db:migrate": "npm run db:migrate --prefix server"
+    "db:migrate": "npm run db:migrate --prefix server",
+    "db:migrate:backend": "cd backend && (.venv/bin/python scripts/migrate.py || python3 scripts/migrate.py)"
   }
 }

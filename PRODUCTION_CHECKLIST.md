@@ -1,16 +1,21 @@
 # Production checklist — Quik Inspect
 
-## API (Express in `server/`)
+## API (FastAPI in `backend/` — recommended)
 
 1. **Neon** — Create a database; copy the **pooler** connection string into Vercel env as `DATABASE_URL`.
 2. **Secrets** — Set `JWT_SECRET` to a long random string (`openssl rand -base64 32`).
-3. **Migrations** — Run against production DB (from your machine or CI):
-   - `cd server && DATABASE_URL="…" npm run db:migrate`
+3. **Migrations** — Run against production DB:
+   - `cd backend && export DATABASE_URL="…" && npm run db:migrate:backend`  
+   - (or `python3 backend/scripts/migrate.py` with `DATABASE_URL` set)
 4. **Vercel**
-   - New project → **Root Directory**: `server`
-   - **Environment variables**: `DATABASE_URL`, `JWT_SECRET`, optional `JWT_EXPIRES_IN`, optional `CORS_ORIGIN` (comma-separated web origins; omit or `*` for native-heavy clients).
-   - Deploy; note the HTTPS origin (e.g. `https://quik-inspect-api.vercel.app`).
+   - **Root Directory**: `backend`
+   - **Framework**: **FastAPI**
+   - **Environment variables**: `DATABASE_URL`, `JWT_SECRET`, optional `JWT_EXPIRES_IN`, optional `CORS_ORIGIN`.
 5. **Smoke test** — `GET /health` and `POST /auth/login` against the deployed URL.
+
+## Legacy API (Express in `server/`)
+
+Same Neon/JWT steps; migrations: `cd server && DATABASE_URL="…" npm run db:migrate`; Vercel **Root Directory** `server`, framework **Other**.
 
 ## Mobile app (`PC/`)
 
