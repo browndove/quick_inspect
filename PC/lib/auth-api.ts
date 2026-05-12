@@ -3,12 +3,16 @@ import { Platform } from 'react-native';
 
 type ExpoExtra = { apiUrl?: string };
 
-/** FastAPI 422 uses `detail` array; HTTPException uses `detail` object or string. */
+/** FastAPI 422 uses `detail` array; auth JSONResponse uses top-level `error` + optional `code`. */
 function formatApiErrorBody(data: {
   error?: string;
+  code?: string;
   detail?: string | Array<{ msg?: string; loc?: unknown[] }> | { error?: string; code?: string };
 }): string {
-  if (typeof data.error === 'string' && data.error.trim()) return data.error;
+  if (typeof data.error === 'string' && data.error.trim()) {
+    const c = typeof data.code === 'string' ? data.code.trim() : '';
+    return c ? `${data.error} (${c})` : data.error;
+  }
   const d = data.detail;
   if (typeof d === 'string' && d.trim()) return d;
   if (typeof d === 'object' && d !== null && !Array.isArray(d)) {
@@ -24,6 +28,12 @@ function formatApiErrorBody(data: {
     if (parts.length) return parts.join(' ');
   }
   return 'Request failed';
+}
+
+function logAuthResponseFailure(path: string, status: number, data: unknown): void {
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    console.warn(`[auth-api] ${path} HTTP ${status}`, data);
+  }
 }
 
 function apiBase(): string | null {
@@ -120,10 +130,12 @@ export async function apiLogin(email: string, password: string): Promise<{ token
   const data = (await res.json().catch(() => ({}))) as {
     token?: string;
     error?: string;
+    code?: string;
     detail?: string | Array<{ msg?: string; loc?: unknown[] }>;
   };
   if (!res.ok) {
-    throw new Error(formatApiErrorBody(data));
+    logAuthResponseFailure('/auth/login', res.status, data);
+    throw new Error(`${formatApiErrorBody(data)} [HTTP ${res.status}]`);
   }
   if (typeof data.token !== 'string' || !data.token) {
     throw new Error('Invalid response from server');
@@ -156,10 +168,12 @@ export async function apiSignup(input: {
   const data = (await res.json().catch(() => ({}))) as {
     token?: string;
     error?: string;
+    code?: string;
     detail?: string | Array<{ msg?: string; loc?: unknown[] }>;
   };
   if (!res.ok) {
-    throw new Error(formatApiErrorBody(data));
+    logAuthResponseFailure('/auth/signup', res.status, data);
+    throw new Error(`${formatApiErrorBody(data)} [HTTP ${res.status}]`);
   }
   if (typeof data.token !== 'string' || !data.token) {
     throw new Error('Invalid response from server');
