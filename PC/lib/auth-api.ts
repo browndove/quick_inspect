@@ -3,6 +3,23 @@ import { Platform } from 'react-native';
 
 type ExpoExtra = { apiUrl?: string };
 
+/** FastAPI 422 uses `detail`; our handlers use `error`. */
+function formatApiErrorBody(data: {
+  error?: string;
+  detail?: string | Array<{ msg?: string; loc?: unknown[] }>;
+}): string {
+  if (typeof data.error === 'string' && data.error.trim()) return data.error;
+  const d = data.detail;
+  if (typeof d === 'string' && d.trim()) return d;
+  if (Array.isArray(d)) {
+    const parts = d
+      .map((x) => (typeof x?.msg === 'string' ? x.msg : ''))
+      .filter(Boolean);
+    if (parts.length) return parts.join(' ');
+  }
+  return 'Request failed';
+}
+
 function apiBase(): string | null {
   const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim() ?? '';
   const fromExtra = (Constants.expoConfig?.extra as ExpoExtra | undefined)?.apiUrl?.trim() ?? '';
@@ -94,9 +111,13 @@ export async function apiLogin(email: string, password: string): Promise<{ token
     throw new Error(mapNetworkFailure(e, base));
   }
 
-  const data = (await res.json().catch(() => ({}))) as { token?: string; error?: string };
+  const data = (await res.json().catch(() => ({}))) as {
+    token?: string;
+    error?: string;
+    detail?: string | Array<{ msg?: string; loc?: unknown[] }>;
+  };
   if (!res.ok) {
-    throw new Error(typeof data.error === 'string' ? data.error : 'Sign in failed');
+    throw new Error(formatApiErrorBody(data));
   }
   if (typeof data.token !== 'string' || !data.token) {
     throw new Error('Invalid response from server');
@@ -126,9 +147,13 @@ export async function apiSignup(input: {
     throw new Error(mapNetworkFailure(e, base));
   }
 
-  const data = (await res.json().catch(() => ({}))) as { token?: string; error?: string };
+  const data = (await res.json().catch(() => ({}))) as {
+    token?: string;
+    error?: string;
+    detail?: string | Array<{ msg?: string; loc?: unknown[] }>;
+  };
   if (!res.ok) {
-    throw new Error(typeof data.error === 'string' ? data.error : 'Could not create account');
+    throw new Error(formatApiErrorBody(data));
   }
   if (typeof data.token !== 'string' || !data.token) {
     throw new Error('Invalid response from server');
