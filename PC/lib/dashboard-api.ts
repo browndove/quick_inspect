@@ -1,4 +1,4 @@
-import { formatApiErrorBody, getApiOrigin } from '@/lib/auth-api';
+import { formatApiErrorBody, getApiErrorMessage, getApiOrigin } from '@/lib/auth-api';
 
 export type InspectorMe = {
   id: string;
@@ -60,4 +60,36 @@ export async function apiListFacilities(token: string): Promise<FacilityRow[]> {
 export async function apiListInspections(token: string): Promise<InspectionRow[]> {
   const out = await authedGet<{ inspections: InspectionRow[] }>(token, '/inspections');
   return out.inspections ?? [];
+}
+
+/** Profile first; facilities and inspections load independently so one 500 does not blank the home tab. */
+export type DashboardLoad = {
+  profile: InspectorMe;
+  facilities: FacilityRow[];
+  inspections: InspectionRow[];
+  /** Non-fatal list failures (e.g. legacy DB until migrations run). */
+  partialError: string | null;
+};
+
+export async function apiLoadDashboard(token: string): Promise<DashboardLoad> {
+  const profile = await apiGetMe(token);
+  let facilities: FacilityRow[] = [];
+  let inspections: InspectionRow[] = [];
+  const warns: string[] = [];
+  try {
+    facilities = await apiListFacilities(token);
+  } catch (e) {
+    warns.push(`Facilities: ${getApiErrorMessage(e)}`);
+  }
+  try {
+    inspections = await apiListInspections(token);
+  } catch (e) {
+    warns.push(`Inspections: ${getApiErrorMessage(e)}`);
+  }
+  return {
+    profile,
+    facilities,
+    inspections,
+    partialError: warns.length ? warns.join(' · ') : null,
+  };
 }

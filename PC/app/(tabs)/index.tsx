@@ -27,7 +27,7 @@ import { FrostedCard } from '@/components/frosted-card';
 import { InspectionBento } from '@/components/inspection-bento';
 import { useAuthSession } from '@/context/auth-session';
 import { getApiErrorMessage } from '@/lib/auth-api';
-import { apiGetMe, apiListFacilities, apiListInspections, type FacilityRow, type InspectionRow, type InspectorMe } from '@/lib/dashboard-api';
+import { apiLoadDashboard, type FacilityRow, type InspectionRow, type InspectorMe } from '@/lib/dashboard-api';
 import { Calm } from '@/theme/calm';
 import { useScaledStyles } from '@/hooks/useResponsive';
 import { getTimeGreeting, inspectorInitials } from '@/theme/inspector-display';
@@ -63,6 +63,7 @@ export default function HomeTabScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [partialError, setPartialError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) {
@@ -74,21 +75,20 @@ export default function HomeTabScreen() {
       return;
     }
     setError(null);
+    setPartialError(null);
     setLoading(true);
     try {
-      const [me, facs, insps] = await Promise.all([
-        apiGetMe(token),
-        apiListFacilities(token),
-        apiListInspections(token),
-      ]);
+      const { profile: me, facilities: facs, inspections: insps, partialError: pe } = await apiLoadDashboard(token);
       setProfile(me);
       setFacilities(facs);
       setInspections(insps);
+      setPartialError(pe);
     } catch (e) {
       setError(getApiErrorMessage(e));
       setProfile(null);
       setFacilities([]);
       setInspections([]);
+      setPartialError(null);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -217,6 +217,16 @@ export default function HomeTabScreen() {
           <View style={styles.errorBanner}>
             <Ionicons name="warning-outline" size={18} color="#b71c1c" />
             <Text style={styles.errorText}>{error}</Text>
+            <Pressable onPress={() => void load()} hitSlop={8} style={styles.retryHit}>
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {!error && partialError ? (
+          <View style={styles.warnBanner}>
+            <Ionicons name="information-circle-outline" size={18} color={Calm.primary} />
+            <Text style={styles.warnText}>{partialError}</Text>
             <Pressable onPress={() => void load()} hitSlop={8} style={styles.retryHit}>
               <Text style={styles.retryText}>Retry</Text>
             </Pressable>
@@ -424,6 +434,24 @@ const baseStyles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Montserrat_600SemiBold',
     color: Calm.primary,
+  },
+  warnBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(37, 99, 235, 0.18)',
+  },
+  warnText: {
+    flex: 1,
+    fontSize: 12,
+    color: Calm.text,
+    fontFamily: 'Montserrat_400Regular',
   },
   headerRow: {
     flexDirection: 'row',
