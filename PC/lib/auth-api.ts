@@ -66,7 +66,7 @@ function mapNetworkFailure(err: unknown, base: string): string {
 
   const isPublicHttps = /^https:\/\//i.test(base);
   const hint = isPublicHttps
-    ? 'Check your connection, Vercel deployment status, and that EXPO_PUBLIC_API_URL has no typo.'
+    ? 'Check your connection, Railway/API deployment status, and that EXPO_PUBLIC_API_URL has no typo.'
     : 'Start the server (cd server && npm run dev), use the same Wi‑Fi as this device, and put your computer’s LAN IP in EXPO_PUBLIC_API_URL (not localhost on a real phone).';
   return ['Cannot reach the API.', `Trying: ${base}`, hint].join(' ');
 }

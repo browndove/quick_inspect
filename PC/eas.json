@@ -12,14 +12,14 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://pc-server-one.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://pc-server-production.up.railway.app"
       }
     },
     "production": {
       "channel": "production",
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://pc-server-one.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://pc-server-production.up.railway.app"
       }
     }
   },
