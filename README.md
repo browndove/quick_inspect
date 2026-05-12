@@ -26,9 +26,15 @@ npm run dev:backend  # FastAPI (uvicorn), port 3000
 npm run dev:server   # Legacy Express (tsx), port 3000
 ```
 
+## Railway (API) — current production
+
+Deploy the **`PC-server`** repo (subtree of `backend/`) or deploy **`backend/`** from this monorepo. Set **`PORT`** automatically (Railway), **`DATABASE_URL`**, **`JWT_SECRET`**, optional **`CORS_ORIGIN`**. Use **`railpack.json`** / **`Procfile`** for the start command (`uvicorn main:app`).
+
+Example API origin: **`https://pc-server-production.up.railway.app`** → set **`EXPO_PUBLIC_API_URL`** in **`PC/.env`** and in EAS (see **`PC/eas.json`**).
+
 ## Vercel (API)
 
-### FastAPI (`backend/`) — recommended
+### FastAPI (`backend/`) — alternative host
 
 1. **Root Directory:** **`backend`**
 2. **Framework preset:** **FastAPI** (see [Vercel FastAPI](https://vercel.com/docs/frameworks/backend/fastapi); `pyproject.toml` sets **`[tool.vercel] entrypoint = "app.main:app"`**).
@@ -45,7 +51,7 @@ Production entry (Express): **`server/src/index.ts`**. Production entry (FastAPI
 
 ## GitHub
 
-This repo replaces separate `PC` + `PC-server` remotes. After pushing here, point Vercel and EAS at this repo (Vercel root = **`backend`** for the Python API, or **`server`** if you still deploy Express).
+This repo replaces separate `PC` + `PC-server` remotes. Deploy the API from **`backend/`** (Railway, Vercel, etc.) and point **`EXPO_PUBLIC_API_URL`** at that HTTPS origin. EAS env is set in **`PC/eas.json`** for preview/production builds.
 
 Former remotes (for history / cherry-pick if needed):
 
