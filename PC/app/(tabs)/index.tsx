@@ -1,6 +1,17 @@
-import { useMemo } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
+import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,19 +25,31 @@ import {
 
 import { FrostedCard } from '@/components/frosted-card';
 import { InspectionBento } from '@/components/inspection-bento';
+import { useAuthSession } from '@/context/auth-session';
+import { getApiErrorMessage } from '@/lib/auth-api';
+import { apiGetMe, apiListFacilities, apiListInspections, type FacilityRow, type InspectionRow, type InspectorMe } from '@/lib/dashboard-api';
 import { Calm } from '@/theme/calm';
 import { useScaledStyles } from '@/hooks/useResponsive';
+import { getTimeGreeting, inspectorInitials } from '@/theme/inspector-display';
 import {
-  getTimeGreeting,
-  INSPECTOR_FULL_NAME,
-  inspectorInitials,
-} from '@/theme/inspector-display';
-import { inspectionTypeLabel, MOCK_RECENT_INSPECTIONS } from '@/theme/recent-inspections';
+  formatInspectionShortDate,
+  inspectionTypeLabel,
+  mapApiInspectionType,
+  type RecentInspectionItem,
+} from '@/theme/recent-inspections';
 
-/** First tab: Home — calm placeholder until dashboard content is defined. */
+function inspectorDisplayName(p: InspectorMe | null): string {
+  if (!p) return 'Inspector';
+  const combined = (p.fullName ?? `${p.firstName ?? ''} ${p.lastName ?? ''}`).trim();
+  if (combined) return combined;
+  return p.email?.trim() || 'Inspector';
+}
+
+/** First tab: Home — live summary from the FastAPI backend. */
 export default function HomeTabScreen() {
   const styles = useScaledStyles(baseStyles);
   const insets = useSafeAreaInsets();
+  const { token } = useAuthSession();
   const [loaded] = useFonts({
     Montserrat_400Regular,
     Montserrat_500Medium,
@@ -34,12 +57,111 @@ export default function HomeTabScreen() {
     Montserrat_700Bold,
   });
 
-  const initials = useMemo(() => inspectorInitials(), []);
+  const [profile, setProfile] = useState<InspectorMe | null>(null);
+  const [facilities, setFacilities] = useState<FacilityRow[]>([]);
+  const [inspections, setInspections] = useState<InspectionRow[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!token) {
+      setProfile(null);
+      setFacilities([]);
+      setInspections([]);
+      setLoading(false);
+      setError('Not signed in');
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const [me, facs, insps] = await Promise.all([
+        apiGetMe(token),
+        apiListFacilities(token),
+        apiListInspections(token),
+      ]);
+      setProfile(me);
+      setFacilities(facs);
+      setInspections(insps);
+    } catch (e) {
+      setError(getApiErrorMessage(e));
+      setProfile(null);
+      setFacilities([]);
+      setInspections([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void load();
+  }, [load]);
+
+  const { facilityLookup, recentTimeline, draftCount, monthVisitCount, lastInspection } = useMemo(() => {
+    const lookup = new Map<string, { name: string; region: string | null; mmda: string | null }>();
+    for (const f of facilities) {
+      lookup.set(f.id, { name: f.name, region: f.region, mmda: f.mmda });
+    }
+    const now = new Date();
+    let drafts = 0;
+    let month = 0;
+    for (const row of inspections) {
+      if (row.status === 'draft') drafts += 1;
+      if (row.createdAt) {
+        const d = new Date(row.createdAt);
+        if (!Number.isNaN(d.getTime()) && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+          month += 1;
+        }
+      }
+    }
+    const list: RecentInspectionItem[] = [];
+    for (const row of inspections.slice(0, 8)) {
+      const fid = row.facilityId;
+      const fac = fid ? lookup.get(fid) : undefined;
+      list.push({
+        id: row.id,
+        type: mapApiInspectionType(row.type),
+        facilityName: fac?.name ?? (fid ? 'Linked facility' : 'No facility linked'),
+        region: fac?.region?.trim() || '—',
+        dateLabel: formatInspectionShortDate(row.createdAt),
+      });
+    }
+    return {
+      facilityLookup: lookup,
+      recentTimeline: list,
+      draftCount: drafts,
+      monthVisitCount: month,
+      lastInspection: inspections[0] ?? null,
+    };
+  }, [inspections, facilities]);
+
+  const displayName = useMemo(() => inspectorDisplayName(profile), [profile]);
   const greetingPrefix = useMemo(() => `${getTimeGreeting()},`, []);
+  const initials = useMemo(() => inspectorInitials(displayName), [displayName]);
+
+  const lastFacility = useMemo(() => {
+    const fid = lastInspection?.facilityId;
+    if (!fid) return null;
+    return facilityLookup.get(fid) ?? null;
+  }, [lastInspection, facilityLookup]);
 
   if (!loaded) {
     return null;
   }
+
+  const lastTypeUi = lastInspection ? mapApiInspectionType(lastInspection.type) : 'pharmacy';
+  const lastRegionLine = lastFacility
+    ? [lastFacility.region, lastFacility.mmda].filter(Boolean).join(' · ') || '—'
+    : '—';
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -52,12 +174,13 @@ export default function HomeTabScreen() {
 
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Calm.primary} />}>
         <View style={styles.headerRow}>
           <View style={styles.headerLeft}>
             <Text style={styles.greetingHint}>{greetingPrefix}</Text>
             <Text style={styles.nameLine} numberOfLines={2}>
-              Inspector {INSPECTOR_FULL_NAME}
+              {displayName}
             </Text>
           </View>
           <View style={styles.headerActions}>
@@ -67,27 +190,54 @@ export default function HomeTabScreen() {
               accessibilityRole="button"
               accessibilityLabel="Notifications">
               <Ionicons name="notifications-outline" size={22} color={Calm.primary} />
-              <View style={styles.notifBadge}>
-                <Text style={styles.notifBadgeText}>1</Text>
-              </View>
+              {draftCount > 0 ? (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>{draftCount > 9 ? '9+' : String(draftCount)}</Text>
+                </View>
+              ) : null}
             </Pressable>
             <Pressable
               style={styles.iconCircle}
-              onPress={() => { }}
+              onPress={() => router.push('/(tabs)/explore')}
               accessibilityRole="button"
-              accessibilityLabel="Profile">
+              accessibilityLabel="Account and more">
               <Text style={styles.initialsText}>{initials}</Text>
             </Pressable>
           </View>
         </View>
 
+        {loading && !profile ? (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator size="small" color={Calm.primary} />
+            <Text style={styles.loadingText}>Loading your dashboard…</Text>
+          </View>
+        ) : null}
+
+        {error ? (
+          <View style={styles.errorBanner}>
+            <Ionicons name="warning-outline" size={18} color="#b71c1c" />
+            <Text style={styles.errorText}>{error}</Text>
+            <Pressable onPress={() => void load()} hitSlop={8} style={styles.retryHit}>
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <View style={styles.statusRow}>
           <View style={styles.statusDot} />
-          <Text style={styles.statusText}>Available for inspections</Text>
+          <Text style={styles.statusText}>
+            {draftCount > 0
+              ? `${draftCount} draft report${draftCount === 1 ? '' : 's'}`
+              : inspections.length > 0
+                ? `${inspections.length} inspection${inspections.length === 1 ? '' : 's'} on file`
+                : 'No inspections yet'}
+          </Text>
         </View>
 
         <Text style={styles.subtitle}>
-          A quiet place for shortcuts and updates. We&apos;ll shape this once your workflow is set.
+          {inspections.length === 0
+            ? 'Start a routine visit when you are on site. Pull down to refresh after saving on the server.'
+            : 'Pull down to refresh. Inspection types below open your paper-style workflows.'}
         </Text>
 
         <InspectionBento />
@@ -104,24 +254,37 @@ export default function HomeTabScreen() {
             <View style={styles.statsBlock}>
               <Text style={styles.statsMeta}>Last inspection</Text>
               <View style={styles.statsTypeRow}>
-                <View style={[styles.typePill, styles.typePillPharmacy]}>
-                  <Text style={styles.typePillTextPharmacy}>Pharmacy</Text>
+                <View
+                  style={[
+                    styles.typePill,
+                    lastTypeUi === 'pharmacy' ? styles.typePillPharmacy : styles.typePillOtcm,
+                  ]}>
+                  <Text
+                    style={
+                      lastTypeUi === 'pharmacy' ? styles.typePillTextPharmacy : styles.typePillTextOtcm
+                    }>
+                    {lastInspection ? inspectionTypeLabel(lastTypeUi) : '—'}
+                  </Text>
                 </View>
               </View>
-              <Text style={styles.statsHighlight}>Thursday, 8 May 2026</Text>
-              <Text style={styles.statsFacility}>Sunrise Pharmacy Ltd.</Text>
-              <Text style={styles.statsRegion}>Greater Accra · Retail</Text>
+              <Text style={styles.statsHighlight}>
+                {lastInspection ? formatInspectionShortDate(lastInspection.createdAt) : '—'}
+              </Text>
+              <Text style={styles.statsFacility}>
+                {lastFacility?.name ?? (lastInspection ? 'No facility linked' : 'No data yet')}
+              </Text>
+              <Text style={styles.statsRegion}>{lastRegionLine}</Text>
             </View>
             <View style={styles.statsDivider} />
             <View style={styles.statsRow}>
               <View style={styles.statsRowItem}>
                 <Text style={styles.statsMeta}>Visits this month</Text>
-                <Text style={styles.statsRowValue}>4</Text>
+                <Text style={styles.statsRowValue}>{monthVisitCount}</Text>
               </View>
               <View style={styles.statsRowSep} />
               <View style={styles.statsRowItem}>
                 <Text style={styles.statsMeta}>Draft reports</Text>
-                <Text style={styles.statsRowValue}>1</Text>
+                <Text style={styles.statsRowValue}>{draftCount}</Text>
               </View>
             </View>
           </View>
@@ -130,43 +293,47 @@ export default function HomeTabScreen() {
         <FrostedCard style={styles.recentCard}>
           <View style={styles.recentInner}>
             <Text style={styles.recentTitle}>Recent inspections</Text>
-            <Text style={styles.recentSubtitle}>Story timeline · newest first</Text>
+            <Text style={styles.recentSubtitle}>Newest first · from your account on the server</Text>
 
             <View style={styles.timeline}>
-              {MOCK_RECENT_INSPECTIONS.map((item, index) => {
-                const isLast = index === MOCK_RECENT_INSPECTIONS.length - 1;
-                return (
-                  <View key={item.id} style={styles.timelineRow}>
-                    <View style={styles.rail}>
-                      <View style={styles.storyRing}>
-                        <View style={styles.storyDot} />
-                      </View>
-                      {!isLast ? <View style={styles.spine} /> : null}
-                    </View>
-                    <View style={styles.storyBubble}>
-                      <View style={styles.storyTop}>
-                        <View
-                          style={[
-                            styles.typePill,
-                            item.type === 'pharmacy' ? styles.typePillPharmacy : styles.typePillOtcm,
-                          ]}>
-                          <Text
-                            style={
-                              item.type === 'pharmacy'
-                                ? styles.typePillTextPharmacy
-                                : styles.typePillTextOtcm
-                            }>
-                            {inspectionTypeLabel(item.type)}
-                          </Text>
+              {recentTimeline.length === 0 ? (
+                <Text style={styles.emptyList}>No inspections yet. They will appear here after you create them on the server.</Text>
+              ) : (
+                recentTimeline.map((item, index) => {
+                  const isLast = index === recentTimeline.length - 1;
+                  return (
+                    <View key={item.id} style={styles.timelineRow}>
+                      <View style={styles.rail}>
+                        <View style={styles.storyRing}>
+                          <View style={styles.storyDot} />
                         </View>
-                        <Text style={styles.storyDate}>{item.dateLabel}</Text>
+                        {!isLast ? <View style={styles.spine} /> : null}
                       </View>
-                      <Text style={styles.storyFacility}>{item.facilityName}</Text>
-                      <Text style={styles.storyRegion}>{item.region}</Text>
+                      <View style={styles.storyBubble}>
+                        <View style={styles.storyTop}>
+                          <View
+                            style={[
+                              styles.typePill,
+                              item.type === 'pharmacy' ? styles.typePillPharmacy : styles.typePillOtcm,
+                            ]}>
+                            <Text
+                              style={
+                                item.type === 'pharmacy'
+                                  ? styles.typePillTextPharmacy
+                                  : styles.typePillTextOtcm
+                              }>
+                              {inspectionTypeLabel(item.type)}
+                            </Text>
+                          </View>
+                          <Text style={styles.storyDate}>{item.dateLabel}</Text>
+                        </View>
+                        <Text style={styles.storyFacility}>{item.facilityName}</Text>
+                        <Text style={styles.storyRegion}>{item.region}</Text>
+                      </View>
                     </View>
-                  </View>
-                );
-              })}
+                  );
+                })
+              )}
             </View>
           </View>
         </FrostedCard>
@@ -218,6 +385,45 @@ const baseStyles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 16,
     alignItems: 'stretch',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: Calm.textMuted,
+    fontFamily: 'Montserrat_400Regular',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(183, 28, 28, 0.08)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(183, 28, 28, 0.2)',
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#b71c1c',
+    fontFamily: 'Montserrat_400Regular',
+  },
+  retryHit: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  retryText: {
+    fontSize: 14,
+    fontFamily: 'Montserrat_600SemiBold',
+    color: Calm.primary,
   },
   headerRow: {
     flexDirection: 'row',
@@ -434,6 +640,13 @@ const baseStyles = StyleSheet.create({
   recentSubtitle: {
     marginTop: 4,
     fontSize: 13,
+    color: Calm.textMuted,
+    fontFamily: 'Montserrat_400Regular',
+  },
+  emptyList: {
+    marginTop: 16,
+    fontSize: 14,
+    lineHeight: 20,
     color: Calm.textMuted,
     fontFamily: 'Montserrat_400Regular',
   },

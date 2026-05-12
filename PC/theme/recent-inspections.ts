@@ -37,3 +37,18 @@ export const MOCK_RECENT_INSPECTIONS: RecentInspectionItem[] = [
 export function inspectionTypeLabel(type: InspectionSiteType): string {
   return type === 'pharmacy' ? 'Pharmacy' : 'OTCM';
 }
+
+/** Map FastAPI inspection ``type`` (e.g. ``pharmacy_routine``) to dashboard pills. */
+export function mapApiInspectionType(type: string): InspectionSiteType {
+  const t = type.toLowerCase();
+  if (t.includes('otc')) return 'otcm';
+  return 'pharmacy';
+}
+
+/** e.g. ``8 May 2026`` from an ISO timestamp */
+export function formatInspectionShortDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}

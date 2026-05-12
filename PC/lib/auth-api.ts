@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 type ExpoExtra = { apiUrl?: string };
 
 /** FastAPI 422 uses `detail` array; auth JSONResponse uses top-level `error` + optional `code`. */
-function formatApiErrorBody(data: {
+export function formatApiErrorBody(data: {
   error?: string;
   code?: string;
   detail?: string | Array<{ msg?: string; loc?: unknown[] }> | { error?: string; code?: string };
@@ -42,6 +42,11 @@ function apiBase(): string | null {
   const raw = (fromEnv || fromExtra).replace(/\/$/, '');
   if (!raw) return null;
   return raw;
+}
+
+/** Same origin used by login/signup — for other authenticated API modules. */
+export function getApiOrigin(): string | null {
+  return apiBase();
 }
 
 async function fetchPostJson(base: string, path: string, body: unknown): Promise<Response> {
