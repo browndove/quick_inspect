@@ -3,14 +3,20 @@ import { Platform } from 'react-native';
 
 type ExpoExtra = { apiUrl?: string };
 
-/** FastAPI 422 uses `detail`; our handlers use `error`. */
+/** FastAPI 422 uses `detail` array; HTTPException uses `detail` object or string. */
 function formatApiErrorBody(data: {
   error?: string;
-  detail?: string | Array<{ msg?: string; loc?: unknown[] }>;
+  detail?: string | Array<{ msg?: string; loc?: unknown[] }> | { error?: string; code?: string };
 }): string {
   if (typeof data.error === 'string' && data.error.trim()) return data.error;
   const d = data.detail;
   if (typeof d === 'string' && d.trim()) return d;
+  if (typeof d === 'object' && d !== null && !Array.isArray(d)) {
+    const o = d as { error?: string; code?: string };
+    if (typeof o.error === 'string' && o.error.trim()) {
+      return o.code ? `${o.error} (${o.code})` : o.error;
+    }
+  }
   if (Array.isArray(d)) {
     const parts = d
       .map((x) => (typeof x?.msg === 'string' ? x.msg : ''))
